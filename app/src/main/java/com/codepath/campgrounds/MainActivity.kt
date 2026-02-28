@@ -3,12 +3,15 @@ package com.codepath.campgrounds
 import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.codepath.campgrounds.databinding.ActivityMainBinding
 import com.codepath.asynchttpclient.AsyncHttpClient
 import com.codepath.asynchttpclient.callback.JsonHttpResponseHandler
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import org.json.JSONException
@@ -42,6 +45,22 @@ class MainActivity : AppCompatActivity() {
 
         // TODO: Set up CampgroundAdapter with campgrounds
         val campgroundAdapter = CampgroundAdapter(this, campgrounds)
+        lifecycleScope.launch {
+            (application as CampgroundApplication).db.campgroundDAO().getAll().collect { databaseList ->
+                databaseList.map { entity ->
+                    Campground(
+                        entity.name,
+                        entity.description,
+                        entity.latLong,
+                        listOf(CampgroundImage(entity.imageURL, null))
+                    )
+                }.also { mappedList ->
+                    campgrounds.clear()
+                    campgrounds.addAll(mappedList)
+                    campgroundAdapter.notifyDataSetChanged()
+                }
+            }
+        }
         campgroundsRecyclerView.adapter = campgroundAdapter
 
         campgroundsRecyclerView.layoutManager = LinearLayoutManager(this).also {
@@ -71,8 +90,17 @@ class MainActivity : AppCompatActivity() {
 
                     // TODO: Do something with the returned json (contains campground information)
                     parsedJson.data?.let { list ->
-                        campgrounds.addAll(list)
-                        campgroundAdapter.notifyDataSetChanged()
+                        lifecycleScope.launch(IO) {
+                            (application as CampgroundApplication).db.campgroundDAO().deleteAll()
+                            (application as CampgroundApplication).db.campgroundDAO().insertAll(list.map {
+                                CampgroundEntity(
+                                    name = it.name,
+                                    description = it.description,
+                                    latLong = it.latLong,
+                                    imageURL = it.imageUrl
+                                )
+                            })
+                        }
                     }
                     // TODO: Save the campgrounds and reload the screen
 
